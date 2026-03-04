@@ -1,0 +1,7 @@
+{
+  "watch": ["src", "public"],
+  "ext": "ts,html,js,css,yaml,json",
+  "ignore": ["node_modules", "dist"],
+  "exec": "npm run build && node dist/dashboard.js",
+  "delay": "500"
+}

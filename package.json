@@ -1,0 +1,43 @@
+{
+  "name": "git-pr-metrics",
+  "version": "1.0.0",
+  "description": "Pluggable Pull Request metrics for team repos: merged count, review times, cycles, per-engineer stats",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "pr-metrics": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "metrics": "node dist/cli.js",
+    "dashboard": "node dist/dashboard.js",
+    "start": "npm run build && npm run metrics",
+    "dev": "concurrently -k \"npm run build && nodemon\" \"wait-on -t 15000 http://localhost:3000 && browser-sync start -p 3001 -f 'public/**' 'dist/**' --proxy localhost:3000\""
+  },
+  "keywords": [
+    "github",
+    "pull-request",
+    "metrics",
+    "reviews"
+  ],
+  "license": "GPL-3.0-or-later",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "js-yaml": "^4.1.0",
+    "octokit": "^5.0.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.10.0",
+    "browser-sync": "^3.0.3",
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.0.2",
+    "typescript": "^5.3.2",
+    "wait-on": "^7.2.0"
+  }
+}
