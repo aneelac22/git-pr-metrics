@@ -27,7 +27,7 @@
       min-height: 100vh;
       line-height: 1.5;
     }
-    .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
     h1 {
       font-size: 1.75rem;
       font-weight: 700;
@@ -63,6 +63,53 @@
       color: var(--accent);
     }
     .card .value.success { color: var(--success); }
+    .charts-row {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.85rem;
+      margin-bottom: 1.25rem;
+      align-items: stretch;
+    }
+    @media (max-width: 1024px) {
+      .charts-row { grid-template-columns: 1fr; }
+    }
+    .card-chart { min-width: 0; }
+    .charts-row .card-chart {
+      padding: 0.75rem 0.6rem;
+      display: flex;
+      flex-direction: column;
+    }
+    .charts-row .card-chart .chart-wrap { flex: 1; display: flex; align-items: flex-end; }
+    .card-chart h3 { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+    .charts-row .card-chart h3 { font-size: 0.65rem; margin-bottom: 0.4rem; letter-spacing: 0.03em; }
+    .chart-sub { font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 0.72rem; color: var(--muted); }
+    .charts-row .chart-sub { font-size: 0.6rem; }
+    .chart-wrap { width: 100%; overflow-x: auto; margin-top: 0.5rem; }
+    .chart-svg { display: block; width: 100%; max-width: 920px; height: auto; }
+    .charts-row .chart-svg { max-width: none; }
+    .charts-row .chart-svg .line,
+    .charts-row .chart-svg .line-days,
+    .charts-row .chart-svg .line-cycles { stroke-width: 2; }
+    .charts-row .chart-svg .axis-text { font-size: 8px; }
+    .charts-row .chart-svg .y-label { font-size: 7px; }
+    .charts-row .chart-total { font-size: 0.68rem; margin-top: 0.45rem; line-height: 1.35; }
+    .charts-row .chart-empty { font-size: 0.78rem; margin-top: 0.35rem; }
+    .chart-svg .grid-line { stroke: var(--border); stroke-width: 1; }
+    .chart-svg .area { fill: url(#chartGradMerged); opacity: 0.35; }
+    .chart-svg .line { fill: none; stroke: var(--success); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .chart-svg .dot { fill: var(--success); stroke: var(--surface); stroke-width: 1.5; }
+    .chart-svg-days .area-days { fill: url(#chartGradDays); opacity: 0.3; }
+    .chart-svg-days .line-days { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .chart-svg-days .dot-days { fill: var(--accent); stroke: var(--surface); stroke-width: 1.5; }
+    .chart-svg-cycles .area-cycles { fill: url(#chartGradCycles); opacity: 0.3; }
+    .chart-svg-cycles .line-cycles { fill: none; stroke: var(--warning); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .chart-svg-cycles .dot-cycles { fill: var(--warning); stroke: var(--surface); stroke-width: 1.5; }
+    .chart-svg .axis-text { fill: var(--muted); font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+    .chart-svg .y-label { fill: var(--muted); font-size: 10px; font-family: 'JetBrains Mono', monospace; }
+    .chart-empty { color: var(--muted); margin: 0.5rem 0 0 0; font-size: 0.9rem; }
+    .chart-total { margin: 0.75rem 0 0 0; font-size: 0.85rem; color: var(--muted); }
+    .chart-total .success { color: var(--success); font-family: 'JetBrains Mono', monospace; font-weight: 500; }
     .engineers {
       margin-top: 2rem;
     }
@@ -148,11 +195,292 @@
         </tr>
       `).join('');
     }
+    function formatMonthShortUtc(ym) {
+      const parts = String(ym).split('-');
+      if (parts.length !== 2) return ym;
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      if (Number.isNaN(y) || Number.isNaN(m)) return ym;
+      const d = new Date(Date.UTC(y, m, 1));
+      return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+    }
+    function renderMergedPerMonthLineChart(metrics) {
+      const series = metrics.mergedPerMonth || [];
+      const total = metrics.totalMerged ?? 0;
+      const footer = `<p class="chart-total">Total merged: <span class="success">${total}</span> <span class="chart-sub">· merge month (UTC)</span></p>`;
+      if (!series.length) {
+        return `<div class="card card-chart">
+          <h3>PRs merged per month</h3>
+          <p class="chart-empty">No merged PRs in range.</p>
+          ${footer}
+        </div>`;
+      }
+      const w = 520;
+      const h = 200;
+      const padL = 36;
+      const padR = 10;
+      const padT = 10;
+      const padB = 42;
+      const innerW = w - padL - padR;
+      const innerH = h - padT - padB;
+      const maxC = Math.max(1, ...series.map(function (p) { return p.count; }));
+      const n = series.length;
+      function xAt(i) {
+        return padL + (n <= 1 ? innerW / 2 : (i * innerW) / (n - 1));
+      }
+      function yAt(c) {
+        return padT + innerH - (c / maxC) * innerH;
+      }
+      const baseline = padT + innerH;
+      let areaD = 'M ' + xAt(0) + ',' + baseline + ' L ' + xAt(0) + ',' + yAt(series[0].count);
+      for (let i = 1; i < n; i++) {
+        areaD += ' L ' + xAt(i) + ',' + yAt(series[i].count);
+      }
+      areaD += ' L ' + xAt(n - 1) + ',' + baseline + ' Z';
+      let lineD = 'M ' + xAt(0) + ',' + yAt(series[0].count);
+      for (let i = 1; i < n; i++) {
+        lineD += ' L ' + xAt(i) + ',' + yAt(series[i].count);
+      }
+      const yTicks = 4;
+      let gridSvg = '';
+      for (let g = 0; g <= yTicks; g++) {
+        const yy = padT + innerH - (g / yTicks) * innerH;
+        gridSvg += '<line class="grid-line" x1="' + padL + '" y1="' + yy + '" x2="' + (w - padR) + '" y2="' + yy + '"/>';
+        const val = Math.round((maxC * g) / yTicks);
+        gridSvg += '<text class="y-label" x="' + (padL - 6) + '" y="' + (yy + 3) + '" text-anchor="end">' + val + '</text>';
+      }
+      const maxLabels = 8;
+      const step = Math.max(1, Math.ceil(n / maxLabels));
+      let xLabels = '';
+      const labeled = new Set();
+      for (let i = 0; i < n; i += step) {
+        labeled.add(i);
+        const x = xAt(i);
+        xLabels += '<text class="axis-text" x="' + x + '" y="' + (h - 10) + '" text-anchor="middle">' + escapeHtml(formatMonthShortUtc(series[i].month)) + '</text>';
+      }
+      if (!labeled.has(n - 1)) {
+        const x = xAt(n - 1);
+        xLabels += '<text class="axis-text" x="' + x + '" y="' + (h - 10) + '" text-anchor="middle">' + escapeHtml(formatMonthShortUtc(series[n - 1].month)) + '</text>';
+      }
+      let dotsSvg = '';
+      if (n <= 24) {
+        for (let i = 0; i < n; i++) {
+          dotsSvg += '<circle class="dot" cx="' + xAt(i) + '" cy="' + yAt(series[i].count) + '" r="3"/>';
+        }
+      }
+      const svg = '<svg class="chart-svg" viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg" aria-label="PRs merged per month">' +
+        '<defs><linearGradient id="chartGradMerged" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0%" stop-color="#3fb950" stop-opacity="0.5"/><stop offset="100%" stop-color="#3fb950" stop-opacity="0"/></linearGradient></defs>' +
+        gridSvg +
+        '<path class="area" d="' + areaD + '"/>' +
+        '<path class="line" d="' + lineD + '"/>' +
+        dotsSvg +
+        xLabels +
+        '</svg>';
+      return `<div class="card card-chart">
+        <h3>PRs merged per month <span class="chart-sub">UTC · ${n} month${n === 1 ? '' : 's'}</span></h3>
+        <div class="chart-wrap">${svg}</div>
+        ${footer}
+      </div>`;
+    }
+    function formatDaysAxis(d) {
+      if (d < 10) return d.toFixed(1);
+      return String(Math.round(d));
+    }
+    function renderDaysReadyToMergeLineChart(metrics) {
+      const series = metrics.daysReadyToMergePerMonth || [];
+      const footer = '<p class="chart-total"><span class="chart-sub">Median calendar days from <strong>ready for review</strong> to merge · same months as merge chart · readiness = GitHub <code>ready_for_review</code>, else first review request, else PR opened</span></p>';
+      if (!series.length) {
+        return '<div class="card card-chart"><h3>Days ready → merge <span class="chart-sub">(median)</span></h3><p class="chart-empty">No merged PR data in range.</p>' + footer + '</div>';
+      }
+      var hasAny = false;
+      for (var hi = 0; hi < series.length; hi++) {
+        if (series[hi].medianDays != null) { hasAny = true; break; }
+      }
+      if (!hasAny) {
+        return '<div class="card card-chart"><h3>Days ready → merge <span class="chart-sub">(median)</span></h3><p class="chart-empty">No measurable intervals in range.</p>' + footer + '</div>';
+      }
+      var w = 520, h = 200, padL = 38, padR = 10, padT = 10, padB = 42;
+      var innerW = w - padL - padR, innerH = h - padT - padB;
+      var n = series.length;
+      var maxD = 1;
+      for (var j = 0; j < n; j++) {
+        var md = series[j].medianDays;
+        if (md != null && md > maxD) maxD = md;
+      }
+      function xAt(i) {
+        return padL + (n <= 1 ? innerW / 2 : (i * innerW) / (n - 1));
+      }
+      function yAt(d) {
+        return padT + innerH - (d / maxD) * innerH;
+      }
+      var baseline = padT + innerH;
+      var segments = [];
+      var cur = [];
+      for (var i = 0; i < n; i++) {
+        var v = series[i].medianDays;
+        if (v == null) {
+          if (cur.length) { segments.push(cur); cur = []; }
+        } else {
+          cur.push({ i: i, v: v });
+        }
+      }
+      if (cur.length) segments.push(cur);
+      var pathsLine = '';
+      var pathsArea = '';
+      for (var s = 0; s < segments.length; s++) {
+        var seg = segments[s];
+        var dLine = 'M ' + xAt(seg[0].i) + ',' + yAt(seg[0].v);
+        for (var k = 1; k < seg.length; k++) {
+          dLine += ' L ' + xAt(seg[k].i) + ',' + yAt(seg[k].v);
+        }
+        pathsLine += '<path class="line-days" d="' + dLine + '"/>';
+        var dArea = 'M ' + xAt(seg[0].i) + ',' + baseline + ' L ' + xAt(seg[0].i) + ',' + yAt(seg[0].v);
+        for (var a = 1; a < seg.length; a++) {
+          dArea += ' L ' + xAt(seg[a].i) + ',' + yAt(seg[a].v);
+        }
+        dArea += ' L ' + xAt(seg[seg.length - 1].i) + ',' + baseline + ' Z';
+        pathsArea += '<path class="area-days" d="' + dArea + '"/>';
+      }
+      var yTicks = 4;
+      var gridSvg = '';
+      for (var g = 0; g <= yTicks; g++) {
+        var yy = padT + innerH - (g / yTicks) * innerH;
+        gridSvg += '<line class="grid-line" x1="' + padL + '" y1="' + yy + '" x2="' + (w - padR) + '" y2="' + yy + '"/>';
+        var yVal = (maxD * g) / yTicks;
+        gridSvg += '<text class="y-label" x="' + (padL - 6) + '" y="' + (yy + 3) + '" text-anchor="end">' + formatDaysAxis(yVal) + 'd</text>';
+      }
+      var maxLabels = 8;
+      var step = Math.max(1, Math.ceil(n / maxLabels));
+      var xLabels = '';
+      var labeled = new Set();
+      for (var xi = 0; xi < n; xi += step) {
+        labeled.add(xi);
+        xLabels += '<text class="axis-text" x="' + xAt(xi) + '" y="' + (h - 10) + '" text-anchor="middle">' + escapeHtml(formatMonthShortUtc(series[xi].month)) + '</text>';
+      }
+      if (!labeled.has(n - 1)) {
+        xLabels += '<text class="axis-text" x="' + xAt(n - 1) + '" y="' + (h - 10) + '" text-anchor="middle">' + escapeHtml(formatMonthShortUtc(series[n - 1].month)) + '</text>';
+      }
+      var dotsSvg = '';
+      if (n <= 24) {
+        for (var di = 0; di < n; di++) {
+          var dv = series[di].medianDays;
+          if (dv != null) {
+            dotsSvg += '<circle class="dot-days" cx="' + xAt(di) + '" cy="' + yAt(dv) + '" r="3"/>';
+          }
+        }
+      }
+      var svg = '<svg class="chart-svg chart-svg-days" viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg" aria-label="Median days ready to merge per month">' +
+        '<defs><linearGradient id="chartGradDays" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0%" stop-color="#58a6ff" stop-opacity="0.45"/><stop offset="100%" stop-color="#58a6ff" stop-opacity="0"/></linearGradient></defs>' +
+        gridSvg + pathsArea + pathsLine + dotsSvg + xLabels +
+        '</svg>';
+      return '<div class="card card-chart"><h3>Days ready → merge <span class="chart-sub">median · UTC</span></h3><div class="chart-wrap">' + svg + '</div>' + footer + '</div>';
+    }
+    function formatCyclesAxis(c) {
+      return (Math.round(c * 10) / 10).toFixed(1);
+    }
+    function renderReviewCyclesPerMonthLineChart(metrics) {
+      var series = metrics.reviewCyclesPerMonth || [];
+      var overall = metrics.reviewCyclesUntilMerge != null ? formatCyclesAxis(metrics.reviewCyclesUntilMerge) : '—';
+      var footer = '<p class="chart-total"><span class="chart-sub">Average review submissions per merged PR per month (same definition as summary card) · overall: <strong>' + overall + '</strong></span></p>';
+      if (!series.length) {
+        var mp = metrics.mergedPerMonth || [];
+        var emptyMsg = mp.length
+          ? 'Monthly series missing from API (often stale server cache). Click <strong>Refresh</strong> or restart the dashboard, then run <code>npm run build</code> if you upgraded code.'
+          : 'No merged PR data in range.';
+        return '<div class="card card-chart"><h3>Review cycles until merge <span class="chart-sub">(avg / month)</span></h3><p class="chart-empty">' + emptyMsg + '</p>' + footer + '</div>';
+      }
+      var hasAny = false;
+      for (var hi = 0; hi < series.length; hi++) {
+        if (series[hi].avgCycles != null) { hasAny = true; break; }
+      }
+      if (!hasAny) {
+        return '<div class="card card-chart"><h3>Review cycles until merge <span class="chart-sub">(avg / month)</span></h3><p class="chart-empty">No data for any month.</p>' + footer + '</div>';
+      }
+      var w = 520, h = 200, padL = 38, padR = 10, padT = 10, padB = 42;
+      var innerW = w - padL - padR, innerH = h - padT - padB;
+      var n = series.length;
+      var maxD = 1;
+      for (var j = 0; j < n; j++) {
+        var ac = series[j].avgCycles;
+        if (ac != null && ac > maxD) maxD = ac;
+      }
+      function xAt(i) {
+        return padL + (n <= 1 ? innerW / 2 : (i * innerW) / (n - 1));
+      }
+      function yAt(v) {
+        return padT + innerH - (v / maxD) * innerH;
+      }
+      var baseline = padT + innerH;
+      var segments = [];
+      var cur = [];
+      for (var i = 0; i < n; i++) {
+        var val = series[i].avgCycles;
+        if (val == null) {
+          if (cur.length) { segments.push(cur); cur = []; }
+        } else {
+          cur.push({ i: i, v: val });
+        }
+      }
+      if (cur.length) segments.push(cur);
+      var pathsLine = '';
+      var pathsArea = '';
+      for (var s = 0; s < segments.length; s++) {
+        var seg = segments[s];
+        var dLine = 'M ' + xAt(seg[0].i) + ',' + yAt(seg[0].v);
+        for (var k = 1; k < seg.length; k++) {
+          dLine += ' L ' + xAt(seg[k].i) + ',' + yAt(seg[k].v);
+        }
+        pathsLine += '<path class="line-cycles" d="' + dLine + '"/>';
+        var dArea = 'M ' + xAt(seg[0].i) + ',' + baseline + ' L ' + xAt(seg[0].i) + ',' + yAt(seg[0].v);
+        for (var a = 1; a < seg.length; a++) {
+          dArea += ' L ' + xAt(seg[a].i) + ',' + yAt(seg[a].v);
+        }
+        dArea += ' L ' + xAt(seg[seg.length - 1].i) + ',' + baseline + ' Z';
+        pathsArea += '<path class="area-cycles" d="' + dArea + '"/>';
+      }
+      var yTicks = 4;
+      var gridSvg = '';
+      for (var g = 0; g <= yTicks; g++) {
+        var yy = padT + innerH - (g / yTicks) * innerH;
+        gridSvg += '<line class="grid-line" x1="' + padL + '" y1="' + yy + '" x2="' + (w - padR) + '" y2="' + yy + '"/>';
+        var yVal = (maxD * g) / yTicks;
+        gridSvg += '<text class="y-label" x="' + (padL - 6) + '" y="' + (yy + 3) + '" text-anchor="end">' + formatCyclesAxis(yVal) + '</text>';
+      }
+      var maxLabels = 8;
+      var step = Math.max(1, Math.ceil(n / maxLabels));
+      var xLabels = '';
+      var labeled = new Set();
+      for (var xi = 0; xi < n; xi += step) {
+        labeled.add(xi);
+        xLabels += '<text class="axis-text" x="' + xAt(xi) + '" y="' + (h - 10) + '" text-anchor="middle">' + escapeHtml(formatMonthShortUtc(series[xi].month)) + '</text>';
+      }
+      if (!labeled.has(n - 1)) {
+        xLabels += '<text class="axis-text" x="' + xAt(n - 1) + '" y="' + (h - 10) + '" text-anchor="middle">' + escapeHtml(formatMonthShortUtc(series[n - 1].month)) + '</text>';
+      }
+      var dotsSvg = '';
+      if (n <= 24) {
+        for (var di = 0; di < n; di++) {
+          var dv = series[di].avgCycles;
+          if (dv != null) {
+            dotsSvg += '<circle class="dot-cycles" cx="' + xAt(di) + '" cy="' + yAt(dv) + '" r="3"/>';
+          }
+        }
+      }
+      var svg = '<svg class="chart-svg chart-svg-cycles" viewBox="0 0 ' + w + ' ' + h + '" xmlns="http://www.w3.org/2000/svg" aria-label="Average review cycles until merge per month">' +
+        '<defs><linearGradient id="chartGradCycles" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0%" stop-color="#d29922" stop-opacity="0.5"/><stop offset="100%" stop-color="#d29922" stop-opacity="0"/></linearGradient></defs>' +
+        gridSvg + pathsArea + pathsLine + dotsSvg + xLabels +
+        '</svg>';
+      return '<div class="card card-chart"><h3>Review cycles until merge <span class="chart-sub">avg · UTC</span></h3><div class="chart-wrap">' + svg + '</div>' + footer + '</div>';
+    }
     function renderCards(metrics) {
       return `
-        <div class="card">
-          <h3>Total PRs merged</h3>
-          <div class="value success">${metrics.totalMerged}</div>
+        <div class="charts-row">
+          ${renderMergedPerMonthLineChart(metrics)}
+          ${renderDaysReadyToMergeLineChart(metrics)}
+          ${renderReviewCyclesPerMonthLineChart(metrics)}
         </div>
         <div class="card">
           <h3>Wait time to first review</h3>

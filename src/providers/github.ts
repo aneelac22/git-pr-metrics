@@ -85,6 +85,7 @@ export function createGitHubProvider(token?: string): PRMetricsProvider {
               authorLogin: author,
               createdAt: new Date(pr.created_at),
               mergedAt,
+              readyForReviewAt: timeline.firstReadyForReviewAt,
               reviews,
               firstReviewRequestedAt: timeline.firstReviewRequestedAt,
               reviewerRequestedAt: timeline.reviewerRequestedAt,
@@ -138,6 +139,8 @@ async function fetchReviews(
 interface ReviewRequestTimeline {
   firstReviewRequestedAt: Date | null;
   reviewerRequestedAt: Record<string, Date>;
+  /** Earliest `ready_for_review` timeline event (draft → ready), if any. */
+  firstReadyForReviewAt: Date | null;
 }
 
 async function fetchReviewRequestTimeline(
@@ -154,9 +157,18 @@ async function fetchReviewRequestTimeline(
   });
 
   let firstReviewRequestedAt: Date | null = null;
+  let firstReadyForReviewAt: Date | null = null;
   const reviewerRequestedAt: Record<string, Date> = {};
 
   for (const event of data) {
+    if ("created_at" in event) {
+      const createdAt = new Date((event as { created_at: string }).created_at);
+      if (event.event === "ready_for_review") {
+        if (firstReadyForReviewAt == null || createdAt < firstReadyForReviewAt) {
+          firstReadyForReviewAt = createdAt;
+        }
+      }
+    }
     if (event.event !== "review_requested" || !("created_at" in event)) continue;
     const createdAt = new Date((event as { created_at: string }).created_at);
     if (firstReviewRequestedAt == null) firstReviewRequestedAt = createdAt;
@@ -165,7 +177,7 @@ async function fetchReviewRequestTimeline(
     if (login && reviewerRequestedAt[login] == null) reviewerRequestedAt[login] = createdAt;
   }
 
-  return { firstReviewRequestedAt, reviewerRequestedAt };
+  return { firstReviewRequestedAt, reviewerRequestedAt, firstReadyForReviewAt };
 }
 
 async function fetchReviewCommentsCountByUser(

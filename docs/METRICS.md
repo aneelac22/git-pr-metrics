@@ -14,6 +14,22 @@ These apply to the selected repo or to all repos combined.
 
 **How to read it:** Raw throughput. Use it to compare activity across repos or time periods, or to sanity-check that the data range is what you expect.
 
+The dashboard also shows **PRs merged per month** as a line chart. Months use **UTC** and the merge timestamp (`merged_at`). Gaps between the first and last month with any merges are filled with **zero** so the timeline is continuous. The series only covers PRs included in the fetch (respects `sinceDays` and `maxMergedPrsPerRepo` in config).
+
+### Days from ready for review to merge (per merge month)
+
+**What it is:** For each **calendar month of merge** (UTC, same buckets as “PRs merged per month”), the **median** number of **calendar days** from when the PR counts as “ready for review” until `merged_at`.
+
+**How “ready for review” is chosen (in order):**
+
+1. **GitHub:** first `ready_for_review` timeline event (draft → ready), when present.
+2. Else **first `review_requested`** event (same source as other review metrics).
+3. Else **PR opened** (`created_at`).
+
+**How to read it:** Higher = PRs spend longer in the review/merge phase after they’re considered ready. Compare months to spot slowdowns. Months with **no** merged PRs show a gap in the line (no median). PRs where merge time is before the readiness start (bad data) are excluded from that month’s sample.
+
+Timeline data is capped at the latest **100** events per PR (same as review-request detection).
+
 ---
 
 ### Wait time to first review
@@ -49,6 +65,8 @@ Use it together with “Wait time to first review”: if both are high, the main
 - **Higher** = More back-and-forth: more comments, re-requests, or multiple reviewers. Can mean thorough review, or that PRs need many iterations.
 
 There’s no single “right” value—it depends on your process. Use it to see how much review activity your merged PRs typically get and to notice trends (e.g. cycles creeping up might mean more rework or stricter review).
+
+The dashboard also shows **review cycles until merge by merge month** as a line chart: for each UTC merge month (same timeline as “PRs merged per month”), the **average** number of review submissions per merged PR in that month. Months with no merges show a gap in the line.
 
 ---
 

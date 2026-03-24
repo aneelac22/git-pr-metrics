@@ -3,6 +3,9 @@ import type {
   RepoMetrics,
   AggregatedMetrics,
   PerEngineerRow,
+  MergedPerMonthPoint,
+  DaysReadyToMergePerMonthPoint,
+  ReviewCyclesPerMonthPoint,
 } from "../types.js";
 
 export function computeRepoMetrics(records: PullRequestRecord[], repoKey: string): RepoMetrics {
@@ -57,10 +60,19 @@ export function computeRepoMetrics(records: PullRequestRecord[], repoKey: string
   }
 
   const perEngineerTable = computePerEngineerTable(records);
+  const mergedPerMonth = computeMergedPerMonthSeries(merged);
+  const daysReadyToMergePerMonth = computeDaysReadyToMergePerMonthSeries(
+    merged,
+    mergedPerMonth
+  );
+  const reviewCyclesPerMonth = computeReviewCyclesPerMonthSeries(merged, mergedPerMonth);
 
   return {
     repoKey,
     totalMerged,
+    mergedPerMonth,
+    daysReadyToMergePerMonth,
+    reviewCyclesPerMonth,
     waitTimeToFirstReviewMs,
     reviewResponseTimeMs,
     reviewCyclesUntilMerge,
@@ -80,6 +92,8 @@ export function aggregateMetrics(reposMetrics: RepoMetrics[]): AggregatedMetrics
   const mergedPerEngineer: Record<string, number> = {};
   const reviewedPerEngineer: Record<string, number> = {};
 
+  const mergedPerMonth = aggregateMergedPerMonthSeries(reposMetrics);
+
   for (const m of reposMetrics) {
     if (m.waitTimeToFirstReviewMs != null) waitTimes.push(m.waitTimeToFirstReviewMs);
     if (m.reviewResponseTimeMs != null) responseTimes.push(m.reviewResponseTimeMs);
@@ -97,6 +111,11 @@ export function aggregateMetrics(reposMetrics: RepoMetrics[]): AggregatedMetrics
     repos: reposMetrics,
     aggregated: {
       totalMerged,
+      mergedPerMonth,
+      /** Filled in `runMetrics` from all PR records (correct cross-repo median). */
+      daysReadyToMergePerMonth: [],
+      /** Filled in `runMetrics` from all PR records (correct cross-repo average). */
+      reviewCyclesPerMonth: [],
       waitTimeToFirstReviewMs: waitTimes.length > 0 ? median(waitTimes) : null,
       reviewResponseTimeMs: responseTimes.length > 0 ? median(responseTimes) : null,
       reviewCyclesUntilMerge: totalMergedForCycles > 0 ? totalCycles / totalMergedForCycles : 0,
@@ -221,6 +240,107 @@ export function computePerEngineerTable(
     return totalB - totalA;
   });
   return rows;
+}
+
+/** UTC calendar month key `YYYY-MM` from a merge timestamp. */
+function monthKeyUtc(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth() + 1;
+  return `${y}-${String(m).padStart(2, "0")}`;
+}
+
+/** All months from `start` through `end` inclusive (`YYYY-MM`, chronological). */
+function enumerateMonthsInclusive(start: string, end: string): string[] {
+  const [y1, m1] = start.split("-").map(Number);
+  const [y2, m2] = end.split("-").map(Number);
+  const out: string[] = [];
+  let y = y1;
+  let m = m1;
+  while (y < y2 || (y === y2 && m <= m2)) {
+    out.push(`${y}-${String(m).padStart(2, "0")}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return out;
+}
+
+/** When the PR is treated as “ready for review” for time-to-merge (provider-agnostic). */
+export function effectiveReadyForReviewAt(pr: PullRequestRecord): Date {
+  return pr.readyForReviewAt ?? pr.firstReviewRequestedAt ?? pr.createdAt;
+}
+
+/** Median days from readiness (see `effectiveReadyForReviewAt`) to merge, per merge month (UTC). */
+export function computeDaysReadyToMergePerMonthSeries(
+  merged: PullRequestRecord[],
+  monthSpan: MergedPerMonthPoint[]
+): DaysReadyToMergePerMonthPoint[] {
+  const byMonth = new Map<string, number[]>();
+  for (const pr of merged) {
+    if (!pr.mergedAt) continue;
+    const month = monthKeyUtc(pr.mergedAt);
+    const start = effectiveReadyForReviewAt(pr).getTime();
+    const end = pr.mergedAt.getTime();
+    if (end < start) continue;
+    const days = (end - start) / 86_400_000;
+    const arr = byMonth.get(month);
+    if (arr) arr.push(days);
+    else byMonth.set(month, [days]);
+  }
+  return monthSpan.map(({ month }) => {
+    const vals = byMonth.get(month) ?? [];
+    if (vals.length === 0) return { month, medianDays: null, sampleSize: 0 };
+    return { month, medianDays: median(vals), sampleSize: vals.length };
+  });
+}
+
+/** Average review submissions (`reviews.length`) per merged PR, per merge month (UTC). */
+export function computeReviewCyclesPerMonthSeries(
+  merged: PullRequestRecord[],
+  monthSpan: MergedPerMonthPoint[]
+): ReviewCyclesPerMonthPoint[] {
+  const byMonth = new Map<string, number[]>();
+  for (const pr of merged) {
+    if (!pr.mergedAt) continue;
+    const month = monthKeyUtc(pr.mergedAt);
+    const cycles = pr.reviews.length;
+    const arr = byMonth.get(month);
+    if (arr) arr.push(cycles);
+    else byMonth.set(month, [cycles]);
+  }
+  return monthSpan.map(({ month }) => {
+    const vals = byMonth.get(month) ?? [];
+    if (vals.length === 0) return { month, avgCycles: null, sampleSize: 0 };
+    return { month, avgCycles: average(vals), sampleSize: vals.length };
+  });
+}
+
+function computeMergedPerMonthSeries(merged: PullRequestRecord[]): MergedPerMonthPoint[] {
+  const counts = new Map<string, number>();
+  for (const pr of merged) {
+    if (!pr.mergedAt) continue;
+    const key = monthKeyUtc(pr.mergedAt);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const keys = [...counts.keys()].sort();
+  if (keys.length === 0) return [];
+  const allMonths = enumerateMonthsInclusive(keys[0]!, keys[keys.length - 1]!);
+  return allMonths.map((month) => ({ month, count: counts.get(month) ?? 0 }));
+}
+
+function aggregateMergedPerMonthSeries(repos: RepoMetrics[]): MergedPerMonthPoint[] {
+  const totals = new Map<string, number>();
+  for (const rm of repos) {
+    for (const p of rm.mergedPerMonth) {
+      totals.set(p.month, (totals.get(p.month) ?? 0) + p.count);
+    }
+  }
+  const keys = [...totals.keys()].sort();
+  if (keys.length === 0) return [];
+  const allMonths = enumerateMonthsInclusive(keys[0]!, keys[keys.length - 1]!);
+  return allMonths.map((month) => ({ month, count: totals.get(month) ?? 0 }));
 }
 
 function median(arr: number[]): number {

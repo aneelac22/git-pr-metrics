@@ -83,7 +83,7 @@ npm run build
 npm run dashboard
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The dashboard shows aggregated metrics and per-repo breakdown.
+Open [http://localhost:3000](http://localhost:3000). The dashboard shows aggregated metrics and line charts for **PRs merged per month**, **median days ready-for-review → merge**, and **average review cycles until merge** (UTC merge months), plus per-repo breakdown.
 
 **Hot reload (development)**
 

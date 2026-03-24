@@ -24,6 +24,8 @@ export interface PullRequestRecord {
   authorLogin: string;
   createdAt: Date;
   mergedAt: Date | null;
+  /** First time the PR was marked ready for review (e.g. draft → ready); GitHub timeline `ready_for_review`. */
+  readyForReviewAt?: Date | null;
   /** Review submissions: who and when (any type: COMMENT, APPROVED, CHANGES_REQUESTED). */
   reviews: { login: string; submittedAt: Date; state: string }[];
   /** When the first review was requested (if available). */
@@ -65,10 +67,39 @@ export interface PerEngineerRow {
   totalLinesDeleted: number;
 }
 
+/** One bucket: calendar month of merge (UTC, `YYYY-MM`) → merged PR count. */
+export interface MergedPerMonthPoint {
+  month: string;
+  count: number;
+}
+
+/** Per merge-month (UTC): median days from “ready for review” to merge; null if no PRs merged that month. */
+export interface DaysReadyToMergePerMonthPoint {
+  month: string;
+  /** Median calendar days from readiness start to merge; null when sampleSize is 0. */
+  medianDays: number | null;
+  /** PRs merged that month with a valid readiness→merge interval. */
+  sampleSize: number;
+}
+
+/** Per merge-month (UTC): average review submissions per merged PR; null if no PRs merged that month. */
+export interface ReviewCyclesPerMonthPoint {
+  month: string;
+  /** Mean `reviews.length` for PRs merged in this month; null when sampleSize is 0. */
+  avgCycles: number | null;
+  sampleSize: number;
+}
+
 /** Per-repo metrics. */
 export interface RepoMetrics {
   repoKey: string;
   totalMerged: number;
+  /** Merged PR counts per calendar month (UTC); includes zero-count gaps between first and last month. */
+  mergedPerMonth: MergedPerMonthPoint[];
+  /** Median days ready-for-review → merge per merge month (aligned with `mergedPerMonth`). */
+  daysReadyToMergePerMonth: DaysReadyToMergePerMonthPoint[];
+  /** Average review cycles per merged PR per merge month (aligned with `mergedPerMonth`). */
+  reviewCyclesPerMonth: ReviewCyclesPerMonthPoint[];
   /** Milliseconds from PR open to first review (median). */
   waitTimeToFirstReviewMs: number | null;
   /** Milliseconds from first review request to first review (median); or open→first review if no request. */
@@ -88,6 +119,9 @@ export interface AggregatedMetrics {
   repos: RepoMetrics[];
   aggregated: {
     totalMerged: number;
+    mergedPerMonth: MergedPerMonthPoint[];
+    daysReadyToMergePerMonth: DaysReadyToMergePerMonthPoint[];
+    reviewCyclesPerMonth: ReviewCyclesPerMonthPoint[];
     waitTimeToFirstReviewMs: number | null;
     reviewResponseTimeMs: number | null;
     reviewCyclesUntilMerge: number;

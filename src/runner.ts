@@ -4,6 +4,8 @@ import {
   computeRepoMetrics,
   aggregateMetrics,
   computePerEngineerTable,
+  computeDaysReadyToMergePerMonthSeries,
+  computeReviewCyclesPerMonthSeries,
 } from "./metrics/calculator.js";
 import type { AggregatedMetrics } from "./types.js";
 import type { Config } from "./types.js";
@@ -13,8 +15,12 @@ import { registerDefaultProviders } from "./providers/index.js";
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const cache = new Map<string, { result: AggregatedMetrics; ts: number }>();
 
+/** Bump when aggregated payload shape changes so stale in-memory cache entries are not reused. */
+const METRICS_CACHE_SCHEMA = 2;
+
 function cacheKey(config: Config): string {
   return JSON.stringify({
+    v: METRICS_CACHE_SCHEMA,
     repos: config.repos.map((r) => `${r.provider}:${r.owner}/${r.repo}`).sort(),
     sinceDays: config.sinceDays,
     maxMergedPrsPerRepo: config.maxMergedPrsPerRepo,
@@ -67,6 +73,15 @@ export async function runMetrics(
 
   const result = aggregateMetrics(allRepoMetrics);
   result.perEngineerTable = computePerEngineerTable(allRecords);
+  const mergedRecords = allRecords.filter((r) => r.mergedAt != null);
+  result.aggregated.daysReadyToMergePerMonth = computeDaysReadyToMergePerMonthSeries(
+    mergedRecords,
+    result.aggregated.mergedPerMonth
+  );
+  result.aggregated.reviewCyclesPerMonth = computeReviewCyclesPerMonthSeries(
+    mergedRecords,
+    result.aggregated.mergedPerMonth
+  );
 
   if (!options?.skipCache) {
     cache.set(cacheKey(config), { result, ts: Date.now() });

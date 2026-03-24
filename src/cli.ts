@@ -18,10 +18,16 @@ runMetrics(configPath, { skipCache: true })
         reviewCyclesUntilMerge: Math.round(metrics.aggregated.reviewCyclesUntilMerge * 10) / 10,
         mergedPerEngineer: metrics.aggregated.mergedPerEngineer,
         reviewedPerEngineer: metrics.aggregated.reviewedPerEngineer,
+        mergedPerMonth: metrics.aggregated.mergedPerMonth,
+        daysReadyToMergePerMonth: metrics.aggregated.daysReadyToMergePerMonth,
+        reviewCyclesPerMonth: metrics.aggregated.reviewCyclesPerMonth,
       },
       byRepo: metrics.repos.map((r) => ({
         repo: r.repoKey,
         totalMerged: r.totalMerged,
+        mergedPerMonth: r.mergedPerMonth,
+        daysReadyToMergePerMonth: r.daysReadyToMergePerMonth,
+        reviewCyclesPerMonth: r.reviewCyclesPerMonth,
         waitTimeToFirstReview: r.waitTimeToFirstReviewMs
           ? formatDuration(r.waitTimeToFirstReviewMs)
           : null,
